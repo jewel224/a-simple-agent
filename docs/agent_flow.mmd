@@ -1,0 +1,34 @@
+flowchart TD
+    A([启动 assistant_order_bot.py]) --> B[定位项目根目录]
+    B --> C[load_dotenv 读取 .env]
+    C --> D{是否配置 MOCK_PG_PASSWORD}
+    D -- 否 --> D1[抛出数据库配置错误并退出]
+    D -- 是 --> E[读取 DashScope 与 shop_dw 连接配置]
+    E --> F[构建 system_prompt 与 ExcSQLTool]
+    F --> G[调用 init_agent_service]
+    G --> H{是否配置 DASHSCOPE_API_KEY}
+    H -- 否 --> H1[提示配置错误并退出]
+    H -- 是 --> I[创建 qwen-agent Assistant]
+    I --> J[启动 WebUI]
+    J --> K[用户输入自然语言问题]
+    K --> L[Agent 分析问题与历史消息]
+    L --> M{是否需要查询业务数据}
+    M -- 否 --> N[直接生成业务回答]
+    M -- 是 --> O[生成 PostgreSQL SQL]
+    O --> P[调用 exc_sql 工具]
+    P --> Q[解析 sql_input 与 database]
+    Q --> R[SQLAlchemy 创建数据库连接]
+    R --> S[使用 shop_app 连接 shop_dw]
+    S --> T[pd.read_sql 执行 SQL]
+    T --> U{SQL 是否执行成功}
+    U -- 否 --> V[返回 SQL 执行错误]
+    U -- 是 --> W[取前 10 行并转为 Markdown]
+    V --> X[工具结果返回 Agent]
+    W --> X
+    X --> Y[Agent 结合查询结果生成回答]
+    Y --> Z[WebUI 展示最终回答]
+    N --> Z
+    Z --> K
+    D1 --> E1([退出程序])
+    H1 --> E1
+    T1([app_tui 备用终端入口]) -. 未默认启用 .-> G

@@ -1,0 +1,12 @@
+downloads/
+.env
+*.log
+pgpass.conf
+spec/scripts/.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.pyc
+marketing/
