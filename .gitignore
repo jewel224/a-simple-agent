@@ -10,3 +10,8 @@ __pycache__/
 .pytest_cache/
 *.pyc
 marketing/
+
+# 本地个人材料，禁止进入项目仓库
+extract_resume.py
+resume_text.txt
+个人简历-*.pdf

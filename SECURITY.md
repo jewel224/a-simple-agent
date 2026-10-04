@@ -10,6 +10,7 @@
 - `MOCK_PG_PASSWORD`
 - `DASHSCOPE_API_KEY`
 - 真实生产数据库连接信息
+- `extract_resume.py`、`resume_text.txt` 和 `个人简历-*.pdf` 等本地个人材料
 - 个人手机号、地址和其它隐私数据
 
 本项目 mock 数据中的地址和手机号均为演示数据。

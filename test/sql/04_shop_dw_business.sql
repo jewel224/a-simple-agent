@@ -13,6 +13,9 @@ DECLARE
     logistics_count integer;
     logistics_trace_count integer;
     payment_count integer;
+    refund_count integer;
+    refund_month_count integer;
+    refund_amount_invalid_count integer;
     event_count integer;
     order_date_min integer;
     order_date_max integer;
@@ -48,6 +51,15 @@ BEGIN
     SELECT count(*) INTO logistics_count FROM public.fact_logistics_order;
     SELECT count(*) INTO logistics_trace_count FROM public.fact_logistics_trace;
     SELECT count(*) INTO payment_count FROM public.fact_payment;
+    SELECT count(*) INTO refund_count FROM public.fact_refund;
+    SELECT count(DISTINCT TO_CHAR(dt.calendar_date, 'YYYY-MM')) INTO refund_month_count
+    FROM public.fact_refund r
+    JOIN public.dim_date dt ON r.date_key = dt.date_key
+    WHERE dt.calendar_date BETWEEN DATE '2026-01-01' AND DATE '2026-08-31';
+    SELECT count(*) INTO refund_amount_invalid_count
+    FROM public.fact_refund r
+    JOIN public.fact_payment p ON r.payment_key = p.payment_key
+    WHERE r.refund_amount > p.pay_amount;
     SELECT count(*) INTO event_count FROM public.fact_app_event;
 
     IF region_count < 106 OR user_count < 213 OR merchant_count < 20
@@ -65,6 +77,16 @@ BEGIN
             order_count, order_item_count;
     END IF;
 
+    IF refund_count < 200 THEN
+        RAISE EXCEPTION 'expected at least 200 refunds, got %', refund_count;
+    END IF;
+    IF refund_month_count <> 8 THEN
+        RAISE EXCEPTION 'refund trend should cover 8 months in 2026, got %', refund_month_count;
+    END IF;
+    IF refund_amount_invalid_count > 0 THEN
+        RAISE EXCEPTION 'found % refunds greater than their payment amount', refund_amount_invalid_count;
+    END IF;
+
     IF logistics_count < 10000 OR logistics_trace_count < 20000 OR event_count < order_count THEN
         RAISE EXCEPTION 'extended fact count mismatch: logistics=% trace=% event=% order=%',
             logistics_count, logistics_trace_count, event_count, order_count;
@@ -72,7 +94,11 @@ BEGIN
 
     SELECT min(date_key), max(date_key) INTO order_date_min, order_date_max
     FROM public.fact_order;
-    IF order_date_min <> 20250101 OR order_date_max > 20260910 THEN
+    IF order_date_min <> 20250101
+       OR order_date_max <> to_char(
+            (current_timestamp AT TIME ZONE 'Asia/Shanghai')::date,
+            'YYYYMMDD'
+          )::integer THEN
         RAISE EXCEPTION 'mock order period mismatch: min=% max=%', order_date_min, order_date_max;
     END IF;
 
@@ -240,3 +266,54 @@ END;
 $$;
 
 ROLLBACK;
+
+-- 验证扩展事实数据已覆盖到上海时区今日，且不会生成未来事实日期
+DO $$
+DECLARE
+    v_today date := (current_timestamp AT TIME ZONE 'Asia/Shanghai')::date;
+    v_max_order_date date;
+    v_max_refund_date date;
+    v_missing_months integer;
+BEGIN
+    SELECT max(dt.calendar_date)
+    INTO v_max_order_date
+    FROM public.fact_order o
+    JOIN public.dim_date dt ON dt.date_key = o.date_key;
+
+    SELECT max(dt.calendar_date)
+    INTO v_max_refund_date
+    FROM public.fact_refund r
+    JOIN public.dim_date dt ON dt.date_key = r.date_key;
+
+    IF v_max_order_date IS NULL OR v_max_order_date <> v_today THEN
+        RAISE EXCEPTION 'fact_order must cover through today, expected %, got %', v_today, v_max_order_date;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.fact_order o
+        JOIN public.dim_date dt ON dt.date_key = o.date_key
+        WHERE dt.calendar_date > v_today
+    ) THEN
+        RAISE EXCEPTION 'fact_order contains future dates';
+    END IF;
+
+    IF v_max_refund_date IS NULL OR v_max_refund_date > v_today THEN
+        RAISE EXCEPTION 'fact_refund date range is invalid, max date is %', v_max_refund_date;
+    END IF;
+
+    SELECT count(*)
+    INTO v_missing_months
+    FROM generate_series(date '2025-01-01', v_today, interval '1 month') AS month_start
+    LEFT JOIN (
+        SELECT DISTINCT date_trunc('month', dt.calendar_date) AS order_month
+        FROM public.fact_order o
+        JOIN public.dim_date dt ON dt.date_key = o.date_key
+    ) orders ON orders.order_month = month_start
+    WHERE orders.order_month IS NULL;
+
+    IF v_missing_months <> 0 THEN
+        RAISE EXCEPTION 'monthly order coverage has % missing months', v_missing_months;
+    END IF;
+END;
+$$;

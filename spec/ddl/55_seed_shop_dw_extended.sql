@@ -332,7 +332,7 @@ SELECT setval(pg_get_serial_sequence('public.dim_product', 'product_key'), (SELE
 SELECT setval(pg_get_serial_sequence('public.dim_promotion', 'promotion_key'), (SELECT max(promotion_key) FROM public.dim_promotion));
 SELECT setval(pg_get_serial_sequence('public.dim_user', 'user_key'), (SELECT max(user_key) FROM public.dim_user));
 
--- 批量生成 2025-01-01 至 2026-09-10 的订单
+-- 批量生成 2025-01-01 至脚本运行当日（Asia/Shanghai）的订单
 DO $$
 DECLARE
     v_day integer;
@@ -383,7 +383,14 @@ BEGIN
         58, 61, 64, 67, 70, 73, 76, 79, 82, 85, 88, 91, 4, 10, 94
     ];
 
-    v_max_day := date '2026-09-10' - date '2025-01-01';
+    -- 以上海时区当日为上限；日期维度当前覆盖到 2027-12-31。
+    v_max_day := greatest(
+        0,
+        least(
+            (current_timestamp AT TIME ZONE 'Asia/Shanghai')::date,
+            date '2027-12-31'
+        ) - date '2025-01-01'
+    );
 
     FOR v_day IN 0..v_max_day LOOP
         v_date := date '2025-01-01' + v_day;

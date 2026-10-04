@@ -59,3 +59,40 @@
 - `UNIQUE(chunk_id, model_name, model_version)`
 
 初始阶段使用精确最近邻查询；确定模型维度后，可以按模型和维度建立 HNSW 表达式索引。
+
+## 3. v2 治理语义层
+
+v2 在同一数据库中新增 `governance` schema：
+
+### governance.table_metadata
+
+| 字段 | 说明 |
+| --- | --- |
+| `table_name` | 业务表名，主键 |
+| `business_meaning` | 表业务含义 |
+| `grain` | 表粒度 |
+| `is_active` | 是否可用于语义检索 |
+| `embedding` | `vector(1024)` |
+| `embedding_model` | 向量模型 |
+| `updated_at` | 更新时间 |
+
+### governance.column_metadata
+
+| 字段 | 说明 |
+| --- | --- |
+| `table_name` + `column_name` | 联合主键 |
+| `data_type` | PostgreSQL 字段类型 |
+| `business_meaning` | 字段业务含义 |
+| `sensitive_level` | `public` / `masked` / `restricted` |
+| `allowed_roles` | 允许访问角色数组 |
+| `embedding` | `vector(1024)` |
+
+### governance.metric_metadata
+
+保存指标编码、名称、口径、计算模板、单位和粒度。
+
+### governance.query_example
+
+保存自然语言问题、标准 SQL、使用表和向量。
+
+四张表都建立 HNSW cosine 索引。DDL 初始化表和字段元数据；向量必须执行 `python -m app.governance.sync_semantic` 后才可检索。

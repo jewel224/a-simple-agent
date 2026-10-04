@@ -1,4 +1,5 @@
 -- op_log 日志测试
+-- 治理 API 端到端验收会追加真实审计，因此这里校验种子下限而非精确数量。
 
 BEGIN;
 
@@ -7,8 +8,8 @@ DECLARE
     log_count integer;
 BEGIN
     SELECT count(*) INTO log_count FROM audit.operation_log;
-    IF log_count <> 3 THEN
-        RAISE EXCEPTION 'expected 3 operation logs, got %', log_count;
+    IF log_count < 3 THEN
+        RAISE EXCEPTION 'expected at least 3 operation logs, got %', log_count;
     END IF;
 
     INSERT INTO audit.operation_log (

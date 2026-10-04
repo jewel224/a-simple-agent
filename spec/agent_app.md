@@ -59,3 +59,40 @@ python .\app\assistant_order_bot.py
 - 数据库密码和 DashScope Key 只存放于本地 `.env`。
 - SQL 工具属于学习型实现，公开分享时应尽量使用只读数据库角色。
 - 当前只返回前 10 行结果，避免大批量数据直接进入模型上下文。
+## 7. v2 治理版应用
+
+v2 入口是 `app/governance/api.py`，主要服务为 FastAPI。
+
+```text
+用户问题
+  -> /api/v1/query
+  -> 语义层检索与动态 Prompt
+  -> governed_sql 工具
+  -> SQLGuard + shop_ro
+  -> 二次脱敏
+  -> 自然语言回答
+```
+
+启动方式：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start_governed_api.ps1
+```
+
+调用示例：
+
+```powershell
+$headers = @{ 'X-API-Key' = $env:APP_API_KEY }
+$body = @{ question = '2025年11月各品类的订单金额排名情况' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/api/v1/query' -Headers $headers -ContentType 'application/json' -Body $body
+```
+
+v2 的安全边界：
+
+- 业务查询只使用 `shop_ro`。
+- 每条 SQL 必须通过 SQLGlot 白名单校验。
+- 默认超时 3000ms，最多返回 100 行。
+- 敏感字段在数据库层禁止授权，在应用层二次脱敏。
+- 所有请求写入 `op_log.audit.operation_log`。
+
+`exc_sql` 与 qwen-agent WebUI 继续保留为 legacy 入口，但不用于 v2 治理链路。

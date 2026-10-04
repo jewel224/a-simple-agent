@@ -42,3 +42,28 @@ GRANT CONNECT ON DATABASE shop_dw TO shop_app;
 - 日常学习使用各库对应角色连接，避免误操作其它库。
 - 建表、修改表结构等维护操作由 `postgres` 或库 owner 执行。
 - `op_log` 的日志表默认禁止 UPDATE/DELETE，需要清理历史数据时由 `postgres` 手动处理。
+
+## 5. v2 治理权限
+
+除四库应用角色外，v2 新增 `shop_ro`：
+
+| 对象 | 权限 |
+| --- | --- |
+| `shop_dw.public` | 仅 `USAGE` |
+| 安全维度表和事实表 | `SELECT` |
+| `fact_order_item` | 仅非敏感字段 `SELECT` |
+| `recipient_name` / `recipient_phone` / `shipping_detail_address` | 不授权 |
+| `v_fact_order_item_masked` | `SELECT` |
+
+`shop_ro` 不授予 `embedding_store`、`agent_memory`、`op_log` 的任何对象权限。API 服务通过独立连接访问四库：
+
+| 连接名 | 角色与数据库 |
+| --- | --- |
+| `shop_ro` | `shop_ro` / `shop_dw` |
+| `embedding` | `embed_app` / `embedding_store` |
+| `memory` | `memory_app` / `agent_memory` |
+| `op_log` | `log_app` / `op_log` |
+
+`spec/ddl/60_shop_dw_governance.sql` 中的 `v_fact_order_item_masked` 使用数据库侧脱敏表达式；`app/governance/masking.py` 再按元数据列名执行应用层脱敏。
+
+`op_log.eval.eval_runs` 和 `op_log.eval.eval_case_results` 通过触发器禁止 `UPDATE` 和 `DELETE`，保持评测结果 append-only。

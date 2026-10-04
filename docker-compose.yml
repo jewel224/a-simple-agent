@@ -1,0 +1,66 @@
+services:
+  db:
+    image: pgvector/pgvector:pg18
+    container_name: mockdata-texttosql-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${MOCK_PG_SUPER_PASSWORD:?请在 .env 中配置 MOCK_PG_SUPER_PASSWORD}
+      POSTGRES_DB: postgres
+      # 初始化脚本需要应用角色与只读角色密码来执行四库 DDL
+      MOCK_PG_APP_PASSWORD: ${MOCK_PG_APP_PASSWORD:?请在 .env 中配置 MOCK_PG_APP_PASSWORD}
+      MOCK_PG_RO_PASSWORD: ${MOCK_PG_RO_PASSWORD:?请在 .env 中配置 MOCK_PG_RO_PASSWORD}
+      LANG: zh_CN.utf8
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/db/init:/docker-entrypoint-initdb.d:ro
+      - ./spec/ddl:/opt/project/spec/ddl:ro
+    ports:
+      # 宿主机使用 5433，避免与本机已安装的 PostgreSQL 5432 冲突
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  semantic-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mockdata-texttosql-semantic-sync
+    env_file:
+      - .env
+    environment:
+      MOCK_PG_HOST: db
+      MOCK_PG_PORT: "5432"
+    command: ["python", "-X", "utf8", "-m", "app.governance.sync_semantic"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mockdata-texttosql-api
+    env_file:
+      - .env
+    environment:
+      MOCK_PG_HOST: db
+      MOCK_PG_PORT: "5432"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      semantic-sync:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; response=urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5); assert response.status == 200"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
